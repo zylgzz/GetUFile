@@ -1,5 +1,5 @@
 import os
-from shutil import copy as shutilCopy
+from shutil import copy as shutilCopy, make_archive
 from time import sleep, strftime, localtime, time
 from psutil import disk_partitions
 from configparser import ConfigParser
@@ -12,9 +12,12 @@ class GetFile():
     buckFileText                过滤文件,list不存在则不进行复制
     backup                      文件备份的位置,根目录,会存在两个文件夹Bakeup,OldBakeup
     fileJson                    过期删除OldBakeup文件夹里面的文件
+    self.backupPath = os.path.join(self.backup, 'Bakeup')           备份的文件夹
+    self.oldBackupPath = os.path.join(self.backup, 'OldBakeup')     文件如果发生修改,这个是存放旧文件的文件夹
+    self.backupZipPath = os.path.join(self.backup, 'BackZip')       存放备份文件的压缩包的文件夹
     """
     def __init__(self):
-        if os.path.isfile('config.ini'):
+        if not os.path.isfile('config.ini'):
             with open('config.ini', 'w') as f:
                 f.write(r'''[file]
         fileSuffix = doc,docx,xls,xlsx,ppt,pptx,wps,txt,txet,py
@@ -27,8 +30,9 @@ class GetFile():
         self.backup = config.get("path", "backupPath")
         self.backupPath = os.path.join(self.backup, 'Bakeup')
         self.oldBackupPath = os.path.join(self.backup, 'OldBakeup')
+        self.backupZipPath = os.path.join(self.backup, 'BackZip')
         self.fileJson = os.path.join(self.backup, 'file.json')
-        for i in (self.backup, self.backupPath, self.oldBackupPath):
+        for i in (self.backup, self.backupPath, self.oldBackupPath, self.backupZipPath):
             if not os.path.isdir(i):
                 try:
                     os.makedirs(i)
@@ -75,7 +79,11 @@ class GetFile():
         for i in disk_partitions():
             if 'removable' in i.opts.lower():  # 在这里找到可移动设备,也即是u盘的所在位置
                 self.removable_disk.append(i.device)
-        return   self.removable_disk
+        if len(self.removable_disk) == 0:
+            sleep(7)
+        else:
+            sleep(2)
+        return self.removable_disk
 
     def get_will_dest_name(self, filename):
         """
@@ -108,7 +116,9 @@ class GetFile():
 
 def main():
     procer = GetFile()
+    # procer.update_file()
     while True:
+        # 1.文件的复制
         procer.update_file()
         for i in procer.get_removable_disk():
             for dir_path, dir_names, file_names in os.walk(i):
@@ -120,7 +130,6 @@ def main():
                     #  ================2.文件的名称的构造====================
                     absolute_file_name = os.path.join(dir_path, filename)
                     will_copy_file = procer.get_will_dest_name(absolute_file_name)
-                    # print('将要复制的文件的名称:%s\t%s' % (absolute_file_name, will_copy_file))
                     # ================3.文件的复制===========================
                     if not os.path.isfile(will_copy_file):
                         procer.do_copy(old=absolute_file_name, new=will_copy_file)
@@ -129,7 +138,6 @@ def main():
                         # 构造文件的命名,首先文件夹转移到另一个,然后进行分割,得到路径和名称,这里进行
                         # 复制,存在时间有限制,对于文件的更改,删去原来的文件,重新从可移动设备复制
                         path_temp = os.path.split(will_copy_file.replace(procer.backupPath, procer.oldBackupPath))
-                        print(path_temp)
                         time_temp = strftime("%Y-%m-%d %H_%M_%S_", localtime(os.stat(will_copy_file).st_mtime))
                         oldbuckupfilename = os.path.join(path_temp[0], time_temp + path_temp[1])
                         procer.do_copy(will_copy_file, oldbuckupfilename)
@@ -140,6 +148,8 @@ def main():
                             f.write(dumps(procer.data))
                     else:
                         pass
+        # 2.文件的压缩
+        make_archive(procer.backupZipPath+'/U盘的备份文件', 'zip', root_dir=procer.backupPath)
 
 
 if __name__ == '__main__':
